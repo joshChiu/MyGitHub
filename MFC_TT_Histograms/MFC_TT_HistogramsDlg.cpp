@@ -132,13 +132,13 @@ BOOL CMFC_TT_HistogramsDlg::OnInitDialog()
 	///Hue_bin IDC_SLIDER
 	CSliderCtrl *pSlidCtrl = (CSliderCtrl*)GetDlgItem(IDC_SLIDER1);   //IDC_SLIDER1 是 slider的名稱
 	pSlidCtrl->SetRange(3, 180, TRUE);    //設定大小值                             
-	pSlidCtrl->SetPos(88);
+	pSlidCtrl->SetPos(21);
 	pSlidCtrl->SetTicFreq(1);
 
 	/// Saturation_bin IDC_SLIDER
 	CSliderCtrl *pSlidCtrl2 = (CSliderCtrl*)GetDlgItem(IDC_SLIDER4);   //IDC_SLIDER1 是 slider的名稱
 	pSlidCtrl2->SetRange(5, 255, TRUE);    //設定大小值                             
-	pSlidCtrl2->SetPos(127);
+	pSlidCtrl2->SetPos(73);
 	pSlidCtrl2->SetTicFreq(1);
 
 	/// Hue Bin 區間下限
@@ -241,15 +241,18 @@ Mat src, dst; //建一些矩阵
 //  Mat hsv;      //轉到hsv平面
 //  Mat H,r2,S,V; //各顏色的閥值
 
-int HbinsPosition= 88 ;
+int HbinsPosition= 21 ;
 int SbinsPosition=127 ;
-int Hue_BinLow=80 , Hue_BinHig=95 ;
+int Hue_BinLow=73 , Hue_BinHig=95 ;
 int Sat_BinLow=75 , Sat_BinHig=90 ;
 
 Mat hsv_planes, H, hsv, hue, Saturation, S;
 
 Mat hueLow, hueBilateral ;
 Mat SatLow, SatBilateral ;
+
+Mat Huehist ;
+Mat Saturationhist ;
 
 Mat HSV;
 // IplImage *HSV;
@@ -799,7 +802,6 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 	if (pScrollBar == GetDlgItem(IDC_SLIDER1))
 	{
 		HbinsPosition = ((CSliderCtrl*)pScrollBar)->GetPos();
-		// image_hsv = cvCreateImage(cvGetSize(image), IPL_DEPTH_8U, 3);
 		Mat Matimage_hsv = image_hsv;
 
 		/// Use only the Hue value
@@ -812,24 +814,27 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		threshold(hueLow, hueBilateral, Hue_BinHig, 0, THRESH_TOZERO_INV);
 
 
-
-		MatND hist;
+		MatND hist ;
+        MatND histBa ;
 		int histSize = MAX(HbinsPosition, 2);
 		float hue_range[] = { 0, 179 };
 		const float* ranges = { hue_range };
 
-		/// Get the Histogram and normalize it  (Hue)
-		calcHist(&hue, 1, 0, Mat(), hist, 1, &histSize, &ranges, true, false);
+		/// Get the Histogram and normalize it  (Hue) , const int Matimage_hsv[3]={0,1,2} 
+		calcHist(&hue, 1, 0 , Mat(), hist, 1, &histSize, &ranges, true, false); 
+		calcHist(&hueBilateral, 1, 0 , Mat(), histBa, 1, &histSize, &ranges, true, false);  //為劃出沒有取threshold的直方圖
+		
+		
 		/// 将直方图归一化到范围 [ 0, histImage.rows ]
-		normalize(hist, hist, 0, 255, NORM_MINMAX, -1, Mat());
-
+		normalize (hist, hist, 0, 255, NORM_MINMAX, -1, Mat());     //為劃出取threshold的BackProject 
+		normalize (histBa, histBa, 0, 255, NORM_MINMAX, -1, Mat()); 
 
 		/// Get Backprojection
 		MatND backproj;
-		calcBackProject(&hue, 1, 0, hist, backproj, &ranges, 1, true);
-		ShowMatOnPicture(backproj, this, IDC_STATIC);  //劃出Hue反向投影图 
-
-
+		//calcBackProject(&hue, 1, 0, hist, backproj, &ranges, 1, true); 
+		calcBackProject(&hueBilateral, 1, 0, histBa, backproj, &ranges, 1, true); 
+		 
+		ShowMatOnPicture(backproj, this, IDC_STATIC);  //劃出Hue取threshold反向投影图 
 
 		CStatic *pAlignStatus = (CStatic *)GetDlgItem(IDC_STATIC2);
 		string title = /*"HbinsPosition: " +*/ to_string(HbinsPosition);
@@ -843,13 +848,33 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		int bin_w = cvRound((double)w / histSize);
 		Mat histImg = Mat::zeros(w, h, CV_8UC3);
 
+		// Mat Matimage = Huehist ;  //為劃出沒有取threshold的直方圖
+		Huehist = hist ;
+
 		for (int i = 0; i < HbinsPosition; i++)
-		{
+		{   /// rectangle参数为：承载的图像、顶点、对角点、颜色（这里是蓝色）、粗细、大小 
 			rectangle(histImg, Point(i*bin_w, h),
-				Point((i + 1)*bin_w, h - cvRound(hist.at<float>(i)*h / 255.0)), Scalar(0, 0, 255), -1);
+				Point((i + 1)*bin_w ,h - cvRound(hist.at<float>(i)*h / 255.0)), Scalar(255, 0, 0), -1);
 		}
+
+		///Hue Bin 下限画线  
+        Point LowerlimitTP = Point (Hue_BinLow*2.3,600);   
+		Point LowerlimitDP =Point (Hue_BinLow*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(histImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Hue Bin 上限画线  
+        Point UpperlimitTP = Point (Hue_BinHig*2.3,600);  
+		Point UpperlimitDP =Point (Hue_BinHig*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(histImg, UpperlimitTP, UpperlimitDP ,Scalar(0,0,255),3 );  
+
+
 		ShowMatOnPicture(histImg, this, IDC_Hdomain);   // 把水平投影同步顯示在介面上
+
 	}
+
+
 
 
 	////   Saturation_bin IDC_SLIDER
@@ -869,6 +894,7 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		threshold(SatLow, SatBilateral, Sat_BinHig, 0, THRESH_TOZERO_INV);
 
 		MatND Shist;
+		MatND ShistBa;
 		int ShistSize = MAX(SbinsPosition, 2);
 		float Saturation_range[] = { 0, 255 };
 		const float* Sranges = { Saturation_range };
@@ -876,12 +902,16 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 
 		/// Get the Histogram and normalize it  (Saturation)
 		calcHist(&Saturation, 1, 0, Mat(), Shist, 1, &ShistSize, &Sranges, true, false);
-		normalize(Shist, Shist, 0, 255, NORM_MINMAX, -1, Mat());
+		calcHist(&SatBilateral, 1, 0, Mat(), ShistBa, 1, &ShistSize, &Sranges, true, false);
 
+		normalize(Shist, Shist, 0, 255, NORM_MINMAX, -1, Mat());
+		normalize(ShistBa, ShistBa, 0, 255, NORM_MINMAX, -1, Mat());
 
 		/// Get Backprojection
 		MatND Sbackproj;
 		calcBackProject(&Saturation, 1, 0, Shist, Sbackproj, &Sranges, 1, true);
+		calcBackProject(&SatBilateral, 1, 0, ShistBa, Sbackproj, &Sranges, 1, true);
+
 		ShowMatOnPicture(Sbackproj, this, IDC_HSV);  //劃出Saturation反向投影图 
 
 
@@ -896,12 +926,28 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		int Sbin_w = cvRound((double)S_w / ShistSize);
 		Mat ShistImg = Mat::zeros(S_w, S_h, CV_8UC3);
 
+		Saturationhist = Shist ;
+
 		for (int i = 0; i < SbinsPosition; i++)
 		{
 			rectangle(ShistImg, Point(i*Sbin_w, S_h),
 				Point((i + 1)*Sbin_w, S_h - cvRound(Shist.at<float>(i)*S_h / 255.0)), Scalar(0, 0, 255), -1);
 		}
+
+		///Saturation Bin 下限画线  
+        Point LowerlimitTP = Point (Sat_BinLow*1.56,600);   
+		Point LowerlimitDP =Point (Sat_BinLow*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Saturation Bin 上限画线  
+        Point UpperlimitTP = Point (Sat_BinHig*1.56,600);  
+		Point UpperlimitDP =Point (Sat_BinHig*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, UpperlimitTP, UpperlimitDP ,Scalar(255,0,0),3 );  
+
 		ShowMatOnPicture(ShistImg, this, IDC_Sdomain);   //把水平投影同步顯示在介面上
+
 
 	}
 
@@ -923,21 +969,25 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 
 		 // inRange(hue, 80, 95, H);
 
-		 MatND hist;
+		 MatND hist ;
+
 		 int histSize = MAX(HbinsPosition, 2);
 		 float hue_range[] = { 0, 180 };
 		 const float* ranges = { hue_range };
 
+
 		 /// Get the Histogram and normalize it  (Hue)
 		 calcHist(&hueBilateral, 1, 0, Mat(), hist, 1, &histSize, &ranges, true, false);
+		 //calcHist(&hue, 1, 0, Mat(), hist, 1, &histSize, &ranges, true, false);
 		 normalize(hist, hist, 0, 255, NORM_MINMAX, -1, Mat());
+
 
 		 /// Get Backprojection
 		 MatND backproj;
 		 calcBackProject(&hueBilateral, 1, 0, hist, backproj, &ranges, 1, true);
-
-		 Mat Matimage = backproj;
-		 ShowMatOnPicture(Matimage, this, IDC_STATIC);
+		 //calcBackProject(&hue, 1, 0, hist, backproj, &ranges, 1, true);
+		 // Mat Matimage = backproj; 
+		 ShowMatOnPicture(backproj, this, IDC_STATIC);  //劃出 Hue反向投影图 
 
 
 		CStatic *pAlignStatus = (CStatic *)GetDlgItem(IDC_STATIC8);
@@ -946,19 +996,34 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		ss.Format(_T("%S"), title.c_str());
 		pAlignStatus->SetWindowText(ss);
 		////////////////////////////////////////////////////////////////////////////////////////////////
+
 		/// Draw the histogram
 		int w = 400; int h = 400;
 		int bin_w = cvRound((double)w / histSize);
 		Mat histImg = Mat::zeros(w, h, CV_8UC3);
 
 		for (int i = 0; i < HbinsPosition; i++)
-		{
-			rectangle(histImg, Point(i*bin_w, h),
-				Point((i + 1)*bin_w, h - cvRound(hist.at<float>(i)*h / 255.0)), Scalar(0, 0, 255), -1);
+		{   /// rectangle参数为：承载的图像、
+			rectangle(histImg, Point(i*bin_w, h),  /// 顶点
+				Point((i + 1)*bin_w, h - cvRound(Huehist.at<float>(i)*h / 255.0)), /// 对角点
+				Scalar(255, 0, 0), -1); /// 颜色（这里是蓝色）、粗细、大小 
 		}
 
+		///Hue Bin 下限画线  
+        Point LowerlimitTP = Point (Hue_BinLow*2.3,600);   
+		Point LowerlimitDP =Point (Hue_BinLow*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(histImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Hue Bin 上限画线  
+        Point UpperlimitTP = Point (Hue_BinHig*2.3,600);  
+		Point UpperlimitDP =Point (Hue_BinHig*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+		line(histImg, UpperlimitTP, UpperlimitDP ,Scalar(0,0,255),3 );  
+
 		Mat Matimage2 = histImg;
-		// ShowMatOnPicture(histImg, this, IDC_Hdomain);
+		ShowMatOnPicture(histImg, this, IDC_Hdomain); //// 把水平投影同步顯示在介面上
+
 		///////////////////////////////////////////////////////////////////////////////////////////////
 	}
 
@@ -1012,10 +1077,23 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		for (int i = 0; i < HbinsPosition; i++)
 		{
 			rectangle(histImg, Point(i*bin_w, h),
-				Point((i + 1)*bin_w, h - cvRound(hist.at<float>(i)*h / 255.0)), Scalar(0, 0, 255), -1);
+				Point((i + 1)*bin_w, h - cvRound(Huehist.at<float>(i)*h / 255.0)), Scalar(255, 0, 0), -1);
 		}
-		Mat Matimage2 = histImg;
-		// ShowMatOnPicture(histImg, this, IDC_Hdomain);
+
+		///Hue Bin 下限画线  
+        Point LowerlimitTP = Point (Hue_BinLow*2.3,600);   
+		Point LowerlimitDP =Point (Hue_BinLow*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(histImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Hue Bin 上限画线  
+        Point UpperlimitTP = Point (Hue_BinHig*2.3,600);  
+		Point UpperlimitDP =Point (Hue_BinHig*2.3,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+		 line(histImg, UpperlimitTP, UpperlimitDP ,Scalar(0,0,255),3 );  
+
+		ShowMatOnPicture(histImg, this, IDC_Hdomain);
+
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	}
 
@@ -1069,10 +1147,22 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		for (int i = 0; i < SbinsPosition; i++)
 		{
 			rectangle(ShistImg, Point(i*Sbin_w, S_h),
-				Point((i + 1)*Sbin_w, S_h - cvRound(Shist.at<float>(i)*S_h / 255.0)), Scalar(0, 0, 255), -1);
+				Point((i + 1)*Sbin_w, S_h - cvRound(Saturationhist.at<float>(i)*S_h / 255.0)), Scalar(0, 0, 255), -1);
 		}
-		Mat Matimage2 = ShistImg;
-		// ShowMatOnPicture(ShistImg, this, IDC_Sdomain);
+
+		///Saturation Bin 下限画线  
+        Point LowerlimitTP = Point (Sat_BinLow*1.56,600);   
+		Point LowerlimitDP =Point (Sat_BinLow*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Saturation Bin 上限画线  
+        Point UpperlimitTP = Point (Sat_BinHig*1.56,600);  
+		Point UpperlimitDP =Point (Sat_BinHig*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, UpperlimitTP, UpperlimitDP ,Scalar(255,0,0),3 );  
+
+		ShowMatOnPicture(ShistImg, this, IDC_Sdomain);
 	}
 
 
@@ -1125,10 +1215,21 @@ void CMFC_TT_HistogramsDlg::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScro
 		for (int i = 0; i < SbinsPosition; i++)
 		{
 			rectangle(ShistImg, Point(i*Sbin_w, S_h),
-				Point((i + 1)*Sbin_w, S_h - cvRound(Shist.at<float>(i)*S_h / 255.0)), Scalar(0, 0, 255), -1);
+				Point((i + 1)*Sbin_w, S_h - cvRound(Saturationhist.at<float>(i)*S_h / 255.0)), Scalar(0, 0, 255), -1);
 		}
-		Mat Matimage2 = ShistImg;
-		// ShowMatOnPicture(ShistImg, this, IDC_Sdomain);
+		///Saturation Bin 下限画线  
+        Point LowerlimitTP = Point (Sat_BinLow*1.56,600);   
+		Point LowerlimitDP =Point (Sat_BinLow*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, LowerlimitTP, LowerlimitDP ,Scalar(34,177,76),3 );  
+
+		///Saturation Bin 上限画线  
+        Point UpperlimitTP = Point (Sat_BinHig*1.56,600);  
+		Point UpperlimitDP =Point (Sat_BinHig*1.56,0) ;
+        ///参数为：承载的图像、起始点、结束点、颜色、粗细、线型  
+        line(ShistImg, UpperlimitTP, UpperlimitDP ,Scalar(255,0,0),3 );  
+
+		ShowMatOnPicture(ShistImg, this, IDC_Sdomain);
 	}
 
 
