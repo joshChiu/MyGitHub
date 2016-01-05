@@ -12,7 +12,7 @@
 #include <stdio.h>  // C的函式庫
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv/cxcore.h>  
+#include <opencv/cxcore.h>
 #include <vector>   
 
 #include <iostream>  // 引入C++<iostream>函式庫
